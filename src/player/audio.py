@@ -1,4 +1,5 @@
 import enum
+import os
 import time
 import threading
 from typing import Callable, Optional
@@ -9,20 +10,35 @@ class PlaybackState(enum.Enum):
     STOPPED = "STOPPED"
     PLAYING = "PLAYING"
     PAUSED = "PAUSED"
+    ERROR = "ERROR"
+
+
+class AudioPlaybackError(Exception):
+    """Custom exception for audio loading and playback failures."""
+    pass
 
 
 class AudioPlayer:
-    """Headless audio engine wrapping pygame.mixer.music."""
+    """Headless audio engine wrapping pygame.mixer.music with robust error handling."""
 
-    def __init__(self, on_state_change: Optional[Callable[[PlaybackState], None]] = None) -> None:
-        # Initialize mixer only (no GUI window required)
-        pygame.mixer.init()
-        
+    # Common formats natively supported by standard pygame SDL2 builds
+    SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".ogg"}
+
+    def __init__(
+        self,
+        on_state_change: Optional[Callable[[PlaybackState], None]] = None,
+        on_error: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        try:
+            pygame.mixer.init()
+        except pygame.error as exc:
+            raise AudioPlaybackError(f"Failed to initialize audio driver: {exc}") from exc
+
         self._state = PlaybackState.STOPPED
         self._current_track: Optional[str] = None
         self._on_state_change = on_state_change
-        
-        # Monitor thread for auto-detecting track end
+        self._on_error = on_error
+
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_monitor = threading.Event()
 
@@ -40,61 +56,84 @@ class AudioPlayer:
             if self._on_state_change:
                 self._on_state_change(self._state)
 
-    def load(self, file_path: str) -> None:
-        """Loads an MP3 or audio file into the player."""
-        pygame.mixer.music.load(file_path)
-        self._current_track = file_path
-        self._set_state(PlaybackState.STOPPED)
+    def _handle_error(self, message: str) -> None:
+        """Resets internal state and dispatches the error message to listener."""
+        self.stop()
+        self._set_state(PlaybackState.ERROR)
+        if self._on_error:
+            self._on_error(message)
 
-    def play(self, file_path: Optional[str] = None) -> None:
-        """Plays a track. If a file path is provided, it loads and plays it."""
+    def load(self, file_path: str) -> bool:
+        """
+        Loads an audio file safely.
+        Returns True if successful, False if loading failed.
+        """
+        if not os.path.exists(file_path):
+            self._handle_error(f"File not found: '{file_path}'")
+            return False
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in self.SUPPORTED_EXTENSIONS:
+            self._handle_error(
+                f"Unsupported file extension '{ext}'. Pygame supports: {', '.join(sorted(self.SUPPORTED_EXTENSIONS))}"
+            )
+            return False
+
+        try:
+            pygame.mixer.music.load(file_path)
+            self._current_track = file_path
+            self._set_state(PlaybackState.STOPPED)
+            return True
+        except pygame.error as exc:
+            # Catches corrupted files, invalid headers, or missing backend codecs
+            self._handle_error(f"Failed to decode audio file '{os.path.basename(file_path)}': {exc}")
+            return False
+        except Exception as exc:
+            self._handle_error(f"Unexpected error loading file: {exc}")
+            return False
+
+    def play(self, file_path: Optional[str] = None) -> bool:
+        """
+        Plays a track. If a file path is passed, it loads it first.
+        Returns True if playback started, False otherwise.
+        """
         if file_path:
-            self.load(file_path)
+            if not self.load(file_path):
+                return False
 
         if not self._current_track:
-            raise RuntimeError("No track loaded to play.")
+            self._handle_error("No track loaded to play.")
+            return False
 
-        pygame.mixer.music.play()
-        self._set_state(PlaybackState.PLAYING)
-        self._start_monitoring()
+        try:
+            pygame.mixer.music.play()
+            self._set_state(PlaybackState.PLAYING)
+            self._start_monitoring()
+            return True
+        except pygame.error as exc:
+            self._handle_error(f"Playback error: {exc}")
+            return False
 
     def pause(self) -> None:
-        """Pauses current playback."""
         if self._state == PlaybackState.PLAYING:
             pygame.mixer.music.pause()
             self._set_state(PlaybackState.PAUSED)
 
     def unpause(self) -> None:
-        """Resumes playback from a paused state."""
         if self._state == PlaybackState.PAUSED:
-            pygame.mixer.music.unpause()
-            self._set_state(PlaybackState.PLAYING)
-
-    def toggle_play_pause(self) -> None:
-        """Toggles between playing and paused states."""
-        if self._state == PlaybackState.PLAYING:
-            self.pause()
-        elif self._state == PlaybackState.PAUSED:
-            self.unpause()
+            try:
+                pygame.mixer.music.unpause()
+                self._set_state(PlaybackState.PLAYING)
+            except pygame.error as exc:
+                self._handle_error(f"Failed to resume playback: {exc}")
 
     def stop(self) -> None:
-        """Stops playback entirely and resets position."""
         self._stop_monitoring()
-        pygame.mixer.music.stop()
+        try:
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
         self._set_state(PlaybackState.STOPPED)
-
-    def set_volume(self, volume: float) -> None:
-        """Sets playback volume between 0.0 (silent) and 1.0 (max)."""
-        clamped_volume = max(0.0, min(1.0, volume))
-        pygame.mixer.music.set_volume(clamped_volume)
-
-    def get_position(self) -> float:
-        """Returns elapsed playback time in seconds for the current track."""
-        if self._state == PlaybackState.STOPPED:
-            return 0.0
-        # pygame returns milliseconds
-        pos_ms = pygame.mixer.music.get_pos()
-        return max(0.0, pos_ms / 1000.0)
 
     # --- Background Track Completion Monitor ---
 
@@ -110,10 +149,8 @@ class AudioPlayer:
             self._monitor_thread.join(timeout=0.2)
 
     def _monitor_playback(self) -> None:
-        """Polls pygame to check if music ended naturally."""
         while not self._stop_monitor.is_set():
             time.sleep(0.1)
-            # If state is PLAYING but mixer reports no active audio, track finished
             if self._state == PlaybackState.PLAYING and not pygame.mixer.music.get_busy():
                 self._set_state(PlaybackState.STOPPED)
                 break
