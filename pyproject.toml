@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cli-music-player"
+version = "0.1.0"
+description = "A terminal-based music player built with Textual and Pygame."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pygame>=2.5.0",
+    "textual>=0.80.0",
+]
+
+[project.scripts]
+music-player = "player.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]

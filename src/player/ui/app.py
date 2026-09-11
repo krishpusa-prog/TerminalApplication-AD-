@@ -84,20 +84,24 @@ class MusicPlayerApp(App[None]):
             track_name = os.path.basename(self.audio_file)
             card = self.query_one(TrackCard)
             card.track_title = track_name
-            self.player.load(self.audio_file)
+            if self.player.load(self.audio_file):
+                dur = self.player.get_duration()
+                if dur > 0:
+                    self.track_duration = dur
 
     def _update_progress(self) -> None:
         """Polls current position and updates progress bar + timer label."""
-        if self.player.state == PlaybackState.PLAYING:
+        if self.player.state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
             current_sec = self.player.get_position()
-            
+            duration = self.player.get_duration() or self.track_duration
+
             # Update Progress Bar
-            progress_pct = min(100.0, (current_sec / self.track_duration) * 100)
+            progress_pct = min(100.0, (current_sec / duration) * 100) if duration > 0 else 0.0
             self.query_one(ProgressBar).progress = progress_pct
 
             # Update Time Label (MM:SS / MM:SS)
             curr_str = f"{int(current_sec // 60):02d}:{int(current_sec % 60):02d}"
-            dur_str = f"{int(self.track_duration // 60):02d}:{int(self.track_duration % 60):02d}"
+            dur_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
             self.query_one("#time_label", Label).update(f"{curr_str} / {dur_str}")
 
     def _on_audio_state_change(self, state: PlaybackState) -> None:

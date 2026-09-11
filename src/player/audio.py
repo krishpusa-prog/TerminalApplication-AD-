@@ -36,11 +36,24 @@ class AudioPlayer:
 
         self._state = PlaybackState.STOPPED
         self._current_track: Optional[str] = None
+        self._track_duration: float = 0.0
         self._on_state_change = on_state_change
         self._on_error = on_error
 
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_monitor = threading.Event()
+
+    def get_position(self) -> float:
+        """Returns the current playback position in seconds."""
+        if self._state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+            pos_ms = pygame.mixer.music.get_pos()
+            if pos_ms >= 0:
+                return pos_ms / 1000.0
+        return 0.0
+
+    def get_duration(self) -> float:
+        """Returns the total track duration in seconds if known."""
+        return self._track_duration
 
     @property
     def state(self) -> PlaybackState:
@@ -82,6 +95,11 @@ class AudioPlayer:
         try:
             pygame.mixer.music.load(file_path)
             self._current_track = file_path
+            try:
+                sound = pygame.mixer.Sound(file_path)
+                self._track_duration = sound.get_length()
+            except Exception:
+                self._track_duration = 0.0
             self._set_state(PlaybackState.STOPPED)
             return True
         except pygame.error as exc:
