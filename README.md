@@ -6,10 +6,11 @@ A lightweight, terminal-based audio player built with **Python**. Designed with 
 
 ## ✨ Features
 
+- **Automatic Playlist & Directory Scanning**: Automatically loads all `.mp3`, `.wav`, and `.ogg` files in a folder or playlist.
+- **Track Navigation**: Seamlessly switch tracks using keyboard shortcuts (<kbd>N</kbd>/<kbd>P</kbd> or Arrow Keys).
 - **Decoupled Architecture**: Audio engine operates on background threads, ensuring the UI remains smooth and non-blocking.
-- **Asynchronous TUI**: Built using **Textual** for rich, flicker-free terminal rendering with keyboard shortcuts.
+- **Asynchronous TUI**: Built using **Textual** for rich, flicker-free terminal rendering with real-time progress indicators.
 - **Robust Error Handling**: Gracefully handles missing files, invalid formats, and playback errors without crashing the app.
-- **Lightweight Audio Engine**: Native backend powered by `pygame.mixer` with built-in state monitoring.
 
 ---
 
@@ -18,6 +19,8 @@ A lightweight, terminal-based audio player built with **Python**. Designed with 
 ```text
 CLI_MusicPlayer/
 │
+├── music/                   # Default audio directory (.mp3, .wav, .ogg)
+│   └── sample.wav
 ├── src/
 │   └── player/
 │       ├── __init__.py
@@ -35,6 +38,7 @@ CLI_MusicPlayer/
 ├── .gitignore
 ├── README.md
 ├── pyproject.toml
+├── setup.py
 └── requirements.txt
 ```
 
@@ -64,48 +68,48 @@ CLI_MusicPlayer/
 3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
+   pip install -e .
    ```
 
 ---
 
 ## 🎵 Usage
 
-Run the music player by passing the path to an audio file (`.mp3`, `.wav`, `.ogg`):
+### Play all songs in the `music/` folder:
+```bash
+python -m player.main
+# or
+python -m player.main music/
+```
+
+### Play a specific file:
+```bash
+python -m player.main music/song.mp3
+```
+
+### Play multiple files:
+```bash
+python -m player.main song1.mp3 song2.mp3 song3.wav
+```
+
+---
+
+## ⌨️ Controls & Keybindings
+
+| Keybinding | Action | Description |
+| :--- | :--- | :--- |
+| <kbd>Space</kbd> | **Play / Pause** | Toggles playback between playing and paused states. |
+| <kbd>N</kbd> or <kbd>→</kbd> | **Next Track** | Skips to the next track in the playlist. |
+| <kbd>P</kbd> or <kbd>←</kbd> | **Prev Track** | Returns to the previous track in the playlist. |
+| <kbd>S</kbd> | **Stop** | Stops playback and resets the progress bar. |
+| <kbd>Q</kbd> | **Quit** | Gracefully stops audio playback and exits the app. |
+
+---
+
+## 🧪 Running Unit Tests
+
+Run the full test suite with pytest:
 
 ```bash
-python -m player.main path/to/song.mp3
+pytest
 ```
-
----
-
-## ⌨️ Keybindings
-
-| Key | Action |
-| :--- | :--- |
-| <kbd>Space</kbd> | Play / Pause track |
-| <kbd>S</kbd> | Stop playback and reset position |
-| <kbd>Q</kbd> | Quit player |
-
----
-
-## 🏗️ Architecture Overview
-
-The project uses an **Event-Driven Observer Pattern** to isolate terminal rendering from audio processing:
-
-```text
-[ User Inputs ] ---> [ Textual UI App ] --(Commands)--> [ Player Controller ]
-                           ^                                    |
-                           |                                    v
-                     (UI Updates)                       [ Audio Engine ]
-                           |                           (pygame / Background Thread)
-                           +---------(Events)-----------+
-```
-
-- **[audio.py](file:///Users/kaustubh/Desktop/PROJECTS/CLI_MusicPlayer/src/player/audio.py)**: Pure Python playback logic. Has zero knowledge of the terminal UI.
-- **[app.py](file:///Users/kaustubh/Desktop/PROJECTS/CLI_MusicPlayer/src/player/ui/app.py)**: Async event-loop interface using Textual. Updates controls and progress indicators safely using rendering guards to eliminate terminal redraw flicker.
-
----
-
-## 📜 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
